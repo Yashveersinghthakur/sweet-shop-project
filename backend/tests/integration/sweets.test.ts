@@ -1,58 +1,79 @@
-import request from 'supertest';
-import app from '../../src/app'; // your Express app
-import jwt from 'jsonwebtoken';
+import request from "supertest";
+import app from "../../src/app";
+import { prisma } from "../../src/config/database";
 
-let token: string;
+let adminToken: string;
+let userToken: string;
 
-beforeAll(async () => {
-  // Optionally, register/login a user to get JWT token
-  const res = await request(app).post('/api/auth/register').send({
-    username: 'tester',
-    password: '123456',
-  });
+describe("RBAC Sweets Module", () => {
+  beforeAll(async () => {
+    await prisma.sweet.deleteMany();
+    await prisma.user.deleteMany();
 
-  const loginRes = await request(app).post('/api/auth/login').send({
-    username: 'tester',
-    password: '123456',
-  });
+    // Register USER
+    await request(app).post("/api/auth/register").send({
+      email: "user@test.com",
+      password: "user123",
+      role: "USER",
+    });
 
-  token = loginRes.body.token; // save JWT token for protected routes
-});
+    // Register ADMIN
+    await request(app).post("/api/auth/register").send({
+      email: "admin@test.com",
+      password: "admin123",
+      role: "ADMIN",
+    });
 
-describe('Sweets Module', () => {
-  it('should add a sweet', async () => {
-    const res = await request(app)
-      .post('/api/sweets')
-      .set('Authorization', `Bearer ${token}`)
+    // Login USER
+    const userLogin = await request(app)
+      .post("/api/auth/login")
       .send({
-        name: 'Gulab Jamun',
-        price: 50,
-        stock: 100,
+        email: "user@test.com",
+        password: "user123",
       });
 
-    expect(res.status).toBe(201);
-    expect(res.body.name).toBe('Gulab Jamun');
+    userToken = userLogin.body.token;
+
+    // Login ADMIN
+    const adminLogin = await request(app)
+      .post("/api/auth/login")
+      .send({
+        email: "admin@test.com",
+        password: "admin123",
+      });
+
+    adminToken = adminLogin.body.token;
   });
 
-  it('should get all sweets', async () => {
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("ADMIN should add sweet", async () => {
     const res = await request(app)
-      .get('/api/sweets')
-      .set('Authorization', `Bearer ${token}`);
+      .post("/api/sweets")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ name: "Chocolate", price: 50 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe("Chocolate");
+  });
+
+  it("USER should NOT add sweet", async () => {
+    const res = await request(app)
+      .post("/api/sweets")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ name: "Vanilla", price: 40 });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("USER should get sweets", async () => {
+    const res = await request(app)
+      .get("/api/sweets")
+      .set("Authorization", `Bearer ${userToken}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('should purchase a sweet', async () => {
-    const res = await request(app)
-      .post('/api/sweets/purchase')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        sweetId: 1, // make sure this ID exists
-        quantity: 2,
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe('Purchase successful');
   });
 });

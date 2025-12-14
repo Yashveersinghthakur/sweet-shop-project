@@ -1,9 +1,45 @@
-import { Router } from 'express';
-import { register, login } from '../controllers/authController';
+import { Request, Response, NextFunction } from "express";
+import jwt from "jsonwebtoken";
 
-const router = Router();
+interface JwtPayload {
+  userId: number;
+  role: string;
+}
 
-router.post('/register', register);
-router.post('/login', login);
+export const authMiddleware = (
+  req: Request & { user?: JwtPayload },
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers.authorization;
 
-export default router;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "secret"
+    ) as JwtPayload;
+
+    req.user = decoded; // ✅ strongly typed
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+};
+
+export const adminMiddleware = (
+  req: Request & { user?: JwtPayload },
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user || req.user.role !== "ADMIN") {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+
+  next();
+};
