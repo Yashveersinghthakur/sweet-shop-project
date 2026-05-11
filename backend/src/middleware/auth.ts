@@ -1,45 +1,57 @@
-import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 
-interface JwtPayload {
-  userId: number;
-  role: string;
+export interface AuthRequest extends Request {
+  user?: any;
 }
 
 export const authMiddleware = (
-  req: Request & { user?: JwtPayload },
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ) => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "secret"
-    ) as JwtPayload;
+    const token = req.header('Authorization');
 
-    req.user = decoded; // ✅ strongly typed
+    if (!token) {
+      return res.status(401).json({
+        message: 'Access denied'
+      });
+    }
+
+    const verified = jwt.verify(
+      token,
+      process.env.JWT_SECRET || 'secret'
+    );
+
+    req.user = verified;
+
     next();
+
   } catch (error) {
-    return res.status(401).json({ message: "Invalid token" });
+    res.status(400).json({
+      message: 'Invalid token'
+    });
   }
 };
 
 export const adminMiddleware = (
-  req: Request & { user?: JwtPayload },
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ) => {
-  if (!req.user || req.user.role !== "ADMIN") {
-    return res.status(403).json({ message: "Forbidden" });
-  }
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({
+        message: 'Admin access required'
+      });
+    }
 
-  next();
+    next();
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Server error'
+    });
+  }
 };
